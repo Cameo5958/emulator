@@ -128,7 +128,7 @@ impl CPU {
 
             ADC(target) => {
                 let value = get_register_u8(target);
-                self.registers.a = self.add(value, true)
+                self.registers.a = self.add(value, true);
             }
         }
     }
@@ -187,14 +187,27 @@ impl CPU {
         }
     }
 
-    fn add(&mut self, value: u8, carry:bool) -> u8 {
-        let (new_value, did_overflow) = self.registers.a.overflowing_add(value).overflowing_add(carry);
+    fn add(&mut self, value: u8, carry: bool) -> u8 {
+        value += carry;
+        let (new_value, did_overflow) = self.registers.a.overflowing_add(value);
         
-        self.registers.f.zero = new_value == 0;
-        self.registers.f.subtract = false;
-        self.f.carry = did_overflow;
-        self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
+        self.registers.set_flags(
+            new_value == 0, false, did_overflow, 
+            (self.registers.a & 0xF) + (value & 0xF) > 0xF;
+        )
 
-        new_value
+        new_value;
+    }
+
+    fn sub(&mut self, value: u8, carry: bool) -> u8 {
+        value += carry;
+        let (new_value, did_overflow) = self.registers.a.overflowing_sub(value);
+
+        self.registers.set_flags(
+            new_value == 0, true, did_overflow,
+            (self.registers.a & 0xF).overflowing_sub(value & 0xF).1
+        );
+
+        new_value;
     }
 }
