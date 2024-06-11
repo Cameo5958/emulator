@@ -41,6 +41,6 @@ impl MemoryBus {
         let msb = self.bus.read_byte(self.sp) as u16;
         self.sp = self.sp.wrapping_add(1);
 
-        (msg << 8) | lsb;
+        (msb << 8) | lsb;
     }
 }
