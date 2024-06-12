@@ -130,10 +130,48 @@ impl CPU {
                 let value = get_register_u8(target);
                 self.registers.a = self.add(value, true);
             }
+
+            SUB(target) => {
+                let value = get_register_u8(target);
+                self.registers.a = self.sub(value, false);
+            }
+
+            SBC(target) => {
+                let value = get_register_u8(target);
+                self.registers.a = self.sub(value, true);
+            }
+
+            AND(target) => {
+                let value = get_register_u8(target);
+                self.registers.a = self._and(value);
+            }
+
+            OR(target) => {
+                let value = get_register_u8(target);
+                self.registers.a = self._or(value);
+            }
+
+            XOR(target) => {
+                let value = get_register_u8(target);
+                self.registers.a = self._xor(value);
+            }
+
+            CP(target) => {
+                let value = get_register_u8(target);
+                self._xor(value);
+            }
+
+            INC(target) => {
+                let value = get_register_u8(target);
+                value += 1;
+                self.registers.set_flags(
+                    value == 0, 0, , self.registers.f.carry
+                )
+            }
         }
     }
 
-    fn get_register_u8(&mut self, target: AllRegisters) -> u8 {
+    fn get_register_u8(& self, target: AllRegisters) -> u8 {
         use AllRegisters::*;
 
         match target {
@@ -150,7 +188,24 @@ impl CPU {
         }
     }
 
-    fn get_register_u16(&mut self, target: AllRegisters) -> u16 {
+    fn set_register_u8(&mut self, target: AllRegisters, val: u8) {
+        use AllRegisters::*;
+
+        match target {
+            // Absolute targets
+            A => { self.registers.a = val; }; B => { self.registers.b = val; };
+            C => { self.registers.c = val; }; D => { self.registers.d = val; };
+            E => { self.registers.e = val; }; F => { self.registers.f = val; };
+            H => { self.registers.h = val; }; L => { self.registers.l = val; };
+            
+            // U8 => { self.bus.set_byte(self.bus.read_increment(), val); };
+
+            // Relative targets
+            _ => { self.bus.write_byte(self.get_rel_loc(target) , val); };
+        }
+    }
+
+    fn get_register_u16(&self, target: AllRegisters) -> u16 {
         use AllRegisters::*;
 
         match target {
@@ -166,7 +221,7 @@ impl CPU {
         }
     }
 
-    fn get_rel_loc(&mut self, target: AllRegisters) {
+    fn get_rel_loc(&self, target: AllRegisters) {
         use AllRegisters::*;
 
         match target {
@@ -209,5 +264,42 @@ impl CPU {
         );
 
         new_value;
+    }
+
+    fn _and(&mut self, value: u8) -> u8 {
+        let new_value = self.registers.a & value;
+
+        self.registers.set_flags(new_value == 0, 0, 1, 0);
+        new_value;
+    }
+
+    fn _or(&mut self, value: u8) -> u8 {
+        let new_value = self.registers.a | value;
+
+        self.registers.set_flags(new_value == 0, 0, 0, 0);
+        new_value;
+    }
+
+    fn _xor(&mut self, value: u8) -> u8 {
+        let new_value = self.registers.a ^ value;
+
+        self.registers.set_flags(new_value == 0, 0, 0, 0);
+        new_value;
+    }
+
+    fn inc(&mut self, value: u8) -> u8 {
+        let new_value = value + 1;
+
+        self.registers.set_flags(
+            new_value == 0, 0, self.registers.f.carry, (new_value & 0xF) == 0
+        )
+    }
+
+    fn dec(&mut self, value: u8) -> u8 {
+        let new_value = value - 1;
+
+        self.registers.set_flags(
+            new_value == 0, 0, self.registers.f.carry, (new_value & 0xF) == 0xF
+        )
     }
 }

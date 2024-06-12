@@ -28,11 +28,11 @@ impl Registers {
     fn get_hl(&self) -> u16         { (self.h as u16) << 8 | self.l as u16 }
     fn set_hl(&self, value: u16)    {  self.h = ((value & 0xFF00) >> 8) as u8; self.l = (value & 0xFF) as u8; }
 
-    fn set_flags(&self, z:bool, s:bool, hc:bool, c: bool) {
+    fn set_flags(&self, z:bool, s:bool, c:bool, hc: bool) {
         self.f.zero         = z;
-        self.f.subtract     = z;
-        self.f.half_carry   = z;
-        self.f.carry        = z;
+        self.f.subtract     = s;
+        self.f.half_carry   = hc;
+        self.f.carry        = c;
     }
 }
 

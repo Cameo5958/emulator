@@ -19,7 +19,7 @@ enum Instruction {
     ADD16(AllRegisters, AllRegisters), INC16(AllRegisters), DEC16(AllRegisters),
 
     // Jumps
-    JP(AllRegisters), JR(i8), JPC(FlagChecks, AllRegisters), JRC(FlagChecks, i8),
+    JP(AllRegisters), JR(FlagChecks), JPC(FlagChecks, AllRegisters), JRC(FlagChecks, i8),
     CALL(AllRegisters), CALLC(FlagChecks, AllRegisters), RET, RETI, RETC(FlagChecks), RST(u8),
 
     // Bitwise operations
@@ -57,13 +57,14 @@ impl Instruction {
 
     fn from_byte(byte: u8) -> Option<Instruction> {
         use Instruction::*;
-        use Target::*;
+        use AllRegisters::*;
 
         match byte {
             0x00 => Some(NOP),
-            ADD {
-
-            }
+            
+            0x03 => Some(INC(BC)),
+            0x04 => Some(INC(B)),
+            0x05 => Some(DEC(B)),
             _ => println!("Implement: {}", byte)
         }
     }
