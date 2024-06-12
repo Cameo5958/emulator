@@ -9,6 +9,8 @@ use crate::{
 pub(crate) struct CPU { 
     registers:  Registers,      // Registers;  registers.rs
     bus:        MemoryBus,      // Memory Bus; memory.rs
+
+    halted:          bool,
 }
 
 // Represents the Core Processing Unit's instructions.
@@ -18,10 +20,14 @@ impl CPU {
             // Initialize state
             registers   : Registers::new(),
             bus         : MemoryBus::new(), 
+            halted      : false,
         }
     }
 
     fn step(&mut self) {
+        // Only execute if not halted
+        if self.halted { return }
+
         // Execute byte located at program counter and shift pc 
         let mut instruction_byte = self.bus.read_increment();
         let prefixed = instruction_byte == 0xCB;
@@ -41,10 +47,10 @@ impl CPU {
         match instruction {
             // No target registers
             NOP     => { }
-            HALT    => { }
+            HALT    => { self.halted = true; }
             STOP    => { }
-            DI    => { }
-            EI    => { }
+            DI    => { self.bus.ime = false; }
+            EI    => { self.bus.ime = true; }
             RLCA    => {
                 let a   = self.registers.a;
                 let msb = a & 0x80 >> 7;
