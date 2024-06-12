@@ -158,15 +158,21 @@ impl CPU {
 
             CP(target) => {
                 let value = get_register_u8(target);
-                self._xor(value);
+                self.sub(value, false);
             }
 
             INC(target) => {
-                let value = get_register_u8(target);
-                value += 1;
-                self.registers.set_flags(
-                    value == 0, 0, , self.registers.f.carry
-                )
+                let value = inc(get_register_u8(target));
+                set_register_u8(target, value);
+            }
+
+            DEC(target) => {
+                let value = dec(get_register_u8(target));
+                set_register_u8(target, value);
+            }
+
+            LD(to, from) => {
+                handleLoad(to, from);
             }
         }
     }
@@ -218,6 +224,15 @@ impl CPU {
                 let msb = self.bus.read_increment() as u16;
                 (msb << 8) | lsb
             }
+        }
+    }
+
+    fn set_register_u16(&self, target: AllRegisters, value: u16) {
+        use AllRegisters::*;
+        
+        match target {
+            AF => { self.registers.set_af(value); }; BC => { self.registers.set_bc(value); };
+            DE => { self.registers.set_de(value); }; HL => { self.registers.set_hl(value); };
         }
     }
 
@@ -293,6 +308,17 @@ impl CPU {
         self.registers.set_flags(
             new_value == 0, 0, self.registers.f.carry, (new_value & 0xF) == 0
         )
+
+        new_value;
+    }
+
+    fn inc_16(&mut self, value: u16) -> u16 {
+        let new_value = value + 1;
+        self.registers.set_flags(
+            new_value == 0, 0, self.registers.f.carry, (new_value & 0xFF) == 0
+        )
+
+        new_value;
     }
 
     fn dec(&mut self, value: u8) -> u8 {
@@ -301,5 +327,35 @@ impl CPU {
         self.registers.set_flags(
             new_value == 0, 0, self.registers.f.carry, (new_value & 0xF) == 0xF
         )
+
+        new_value;
+    }
+
+    fn dec_16(&mut self, value: u8) -> u8 {
+        let new_value = value - 1;
+        self.registers.set_flags(
+            new_value == 0, 0, self.registers.f.carry, (new_value & 0xFF) == 0xFF
+        )
+
+        new_value;
+    }
+
+    fn handleLoad(&mut self, to: AllRegisters, from: AllRegisters) {
+        if (to == rU16) { handleRelativeLoad(from); }
+        else {
+            let val = get_register_u8(from);
+            set_register_u8(to, val);
+        }
+    }
+
+    fn handleRelativeLoad(&mut self, from: AllRegisters) {
+        // The next two bytes represent the absolute next value
+        let lsb = self.bus.read_increment() as u16;
+        let msb = self.bus.read_increment() as u16;
+
+        let loc = msb << 8 | lsb;
+        let val = get_register_u8(from);
+        
+        self.bus.write_byte(loc, val);
     }
 }
