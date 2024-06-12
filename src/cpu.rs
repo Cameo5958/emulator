@@ -111,7 +111,7 @@ impl CPU {
                 let cf  = self.registers.f.carry;
 
                 self.registers.a = (a >> 1) | cf;
-                self.registers.f = ls << CARRY_FLAG_BYTE_POSITION;
+                self.registers.f = lsb << CARRY_FLAG_BYTE_POSITION;
             }
             DAA    => { 
 
@@ -122,57 +122,133 @@ impl CPU {
             
             // One target register
             ADD(target) => {
-                let value = get_register_u8(target);
+                let value = self.get_register_u8(target);
                 self.registers.a = self.add(value, false);
+            }
+            
+            ADD16(target) => {
+                let value = self.get_register_u16(target);
+                let new_value = self.add_16(value, false);
+                self.registers.set_hl(new_value);
             }
 
             ADC(target) => {
-                let value = get_register_u8(target);
+                let value = self.get_register_u8(target);
                 self.registers.a = self.add(value, true);
             }
 
+            ADC16(target) => {
+                let value = self.get_register_u16(target);
+                let new_value = self.add_16(value, true);
+                self.registers.set_hl(new_value);
+            }
+
             SUB(target) => {
-                let value = get_register_u8(target);
+                let value = self.get_register_u8(target);
                 self.registers.a = self.sub(value, false);
             }
 
             SBC(target) => {
-                let value = get_register_u8(target);
+                let value = self.get_register_u8(target);
                 self.registers.a = self.sub(value, true);
             }
 
             AND(target) => {
-                let value = get_register_u8(target);
+                let value = self.get_register_u8(target);
                 self.registers.a = self._and(value);
             }
 
             OR(target) => {
-                let value = get_register_u8(target);
+                let value = self.get_register_u8(target);
                 self.registers.a = self._or(value);
             }
 
             XOR(target) => {
-                let value = get_register_u8(target);
+                let value = self.get_register_u8(target);
                 self.registers.a = self._xor(value);
             }
 
             CP(target) => {
-                let value = get_register_u8(target);
+                let value = self.get_register_u8(target);
                 self.sub(value, false);
             }
 
             INC(target) => {
                 let value = inc(get_register_u8(target));
-                set_register_u8(target, value);
+                self.set_register_u8(target, value);
+            }
+
+            INC16(target) => {
+                let value = inc_16(get_register_u16(target));
+                self.set_register_u16(target, value);
             }
 
             DEC(target) => {
                 let value = dec(get_register_u8(target));
-                set_register_u8(target, value);
+                self.set_register_u8(target, value);
+            }
+
+            DEC16(target) => {
+                let value = dec_16(get_register_u8(target));
+                self.set_register_u16(target, value);
             }
 
             LD(to, from) => {
                 handleLoad(to, from);
+            }
+
+            LDI(to, from) => {
+                handleLoad(to, from);
+                
+                let value = inc(get_register_u8(from));
+                self.set_register_u8(target, value);
+            }
+
+            LDD(to, from) => {
+                handleLoad(to, from);
+
+                let value = dec(get_register_u8(from));
+                self.set_register_u8(target, value);
+            }
+
+            LDH(to, from) => {
+                // Just a different name
+                handleLoad(to, from);
+            }
+
+            LDHLSP(from) => {
+                // Literally ONE CASE like GO AWAY 
+                value = self.get_register_u16(from);
+                self.registers.set_hl(value);
+            }
+
+            // Jumps
+            JP(cond, to) => {
+                self.bus.jump( get_register_u16(to), get_cond_met(cond) );
+            }
+
+            JR(cond, to) => {
+                self.bus.jump( self.bus.pc + get_register_u8(to), get_cond_met(cond) );
+            }
+
+            CALL(cond, to) => {
+                // Don't do anything if the condition isn't met
+                if !get_cond_met(cond) { return; }
+                // Push current program counter onto stack
+                self.bus.push(self.bus.pc);
+                self.bus.jump( get_register_u16(to), true);
+            }
+
+            RET(cond) => {
+                // Don't return unless condition is met
+                if get_cond_met(cond) { 
+                    // Reset program counter
+                    self.bus.pc = self.bus.pop();
+                }
+            }
+
+            RETI(cond) => {
+
             }
         }
     }
@@ -257,6 +333,18 @@ impl CPU {
         }
     }
 
+    fn get_cond_met(&self, condition: FlagChecks) -> bool {
+        use FlagChecks::*;
+
+        match condition {
+            NotZero  => { !self.registers.f.zero;  };
+            Zero     => {  self.registers.f.zero;  };
+            NotCarry => { !self.registers.f.carry; };
+            Carry    => {  self.registers.f.carry; };
+            Always   => {  true;                   };
+        }
+    }
+
     fn add(&mut self, value: u8, carry: bool) -> u8 {
         value += carry;
         let (new_value, did_overflow) = self.registers.a.overflowing_add(value);
@@ -264,6 +352,18 @@ impl CPU {
         self.registers.set_flags(
             new_value == 0, false, did_overflow, 
             (self.registers.a & 0xF) + (value & 0xF) > 0xF;
+        )
+
+        new_value;
+    }
+
+    fn add_16(&mut self, value: u16, carry: bool) -> u16 {
+        value += carry; 
+        let (new_value, did_overflow) = self.registers.get_hl().overflowing_add(value);
+
+        self.registers.set_flags(
+            new_value == 0, false, did_overflow, 
+            (self.registers.get_hl() & 0xFF) + (value & 0xFF) > 0xFF;
         )
 
         new_value;
@@ -343,8 +443,8 @@ impl CPU {
     fn handleLoad(&mut self, to: AllRegisters, from: AllRegisters) {
         if (to == rU16) { handleRelativeLoad(from); }
         else {
-            let val = get_register_u8(from);
-            set_register_u8(to, val);
+            let val = self.get_register_u8(from);
+            self.set_register_u8(to, val);
         }
     }
 
@@ -353,9 +453,13 @@ impl CPU {
         let lsb = self.bus.read_increment() as u16;
         let msb = self.bus.read_increment() as u16;
 
-        let loc = msb << 8 | lsb;
-        let val = get_register_u8(from);
+        let loc = (msb << 8) | lsb;
+        let val = self.get_register_u8(from);
         
         self.bus.write_byte(loc, val);
+    }
+
+    fn handle_interrupts(&mut self, _id: InterruptIDs) {
+        
     }
 }

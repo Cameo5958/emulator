@@ -19,8 +19,8 @@ enum Instruction {
     ADD16(AllRegisters, AllRegisters), INC16(AllRegisters), DEC16(AllRegisters),
 
     // Jumps
-    JP(AllRegisters), JR(FlagChecks), JPC(FlagChecks, AllRegisters), JRC(FlagChecks, i8),
-    CALL(AllRegisters), CALLC(FlagChecks, AllRegisters), RET, RETI, RETC(FlagChecks), RST(u8),
+    JP(FlagChecks, AllRegisters), JR(FlagChecks, AllRegisters),
+    CALL(FlagChecks, AllRegisters), RET, RETI, RETC(FlagChecks), RST(u8),
 
     // Bitwise operations
     BIT(AllRegisters), RES(AllRegisters), SET(AllRegisters),
@@ -44,6 +44,9 @@ enum AllRegisters {
 
 // Store possible flag checks
 enum FlagChecks { NotZero, Zero, NotCarry, Carry, Always }
+
+// Store possible interrupt IDs
+enum InterruptIDs {  }
 
 // Implement conversion from byte to instruction
 impl Instruction {

@@ -2,6 +2,7 @@ struct MemoryBus {
     memory: [u8; 0xFFFF]
     pc:      u8;
     sp:      u8;
+    ime:   bool;
 }
 
 enum MemoryMap {
@@ -24,6 +25,14 @@ impl MemoryBus {
     fn read_increment(&self) -> u8 {
         self.memory[self.pc as usize];
         self.pc.wrapping_add(1);
+    }
+
+    fn call(&mut self, target: u16, condition: bool) {
+
+    }
+
+    fn jump(&mut self, target: u16, condition: bool) {
+        if condition { self.pc = target; }
     }
 
     fn push(&mut self, val: u16) {
