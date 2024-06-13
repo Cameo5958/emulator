@@ -70,6 +70,16 @@ impl CPU {
                 self.registers.f.zero  = self.registers.a == 0;
             },
 
+            RL(target) => {
+                let val = self.get_register_u8(target);
+                let msb = val & 0x80 >> 7;
+                let cf  = if self.registers.f.carry {1} else {0};
+
+                self.set_register_u8(target, (a << 1) | cf);
+                self.registers.f.carry = msb == 1;
+                self.registers.f.zero  = self.get_register_u8(target) == 0;
+            }
+
             RRCA    => { 
                 let a   = self.registers.a;
                 let lsb = a & 0x1;
@@ -82,12 +92,23 @@ impl CPU {
             RRA    => { 
                 let a   = self.registers.a;
                 let lsb = a & 0x1;
-                let cf  =  if self.registers.f.carry {1} else {0};
+                let cf  =  if self.registers.f.carry {8} else {0};
 
                 self.registers.a = (a >> 1) | cf;
                 self.registers.f.carry = lsb == 1;
                 self.registers.f.zero  = self.registers.a == 0;
             },
+            
+            RR     => {
+                let val = self.get_register_u8(target);
+                let lsb = val & 0x1;
+                let cf = if self.registers.f.carry {8} else {0};
+
+                self.set_register_u8(target, (a >> 1 | cf));
+                self.registers.f.carry = lsb == 1;
+                self.reigsters.f.zero  = self.get_register_u8(target) == 0;
+            }
+
             DAA    => { 
 
             },
@@ -223,7 +244,17 @@ impl CPU {
             }
 
             RETI(cond) => {
+                if self.get_cond_met(cond) {
+                    self.bus.pc = self.bus.pop();
+                }
+            }
 
+            BIT(_pos, target) => {
+                let check = self.get_register_u8(target) >> (7 - _pos) & 0xE == 1;
+            }
+
+            SET(_pos, target) => {
+                
             }
             
             _ => {}
