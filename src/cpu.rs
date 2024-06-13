@@ -47,10 +47,11 @@ impl CPU {
         match instruction {
             // No target registers
             NOP     => { }
+            EMPTY   => { }
             HALT    => { self.halted = true; }
             STOP    => { }
-            DI    => { self.bus.ime = false; }
-            EI    => { self.bus.ime = true; }
+            DI      => { self.bus.ime = false; }
+            EI      => { self.bus.ime = true; }
             RLCA    => {
                 let a   = self.registers.a;
                 let msb = a & 0x80 >> 7;
@@ -92,21 +93,21 @@ impl CPU {
             RRA    => { 
                 let a   = self.registers.a;
                 let lsb = a & 0x1;
-                let cf  =  if self.registers.f.carry {8} else {0};
+                let cf  =  if self.registers.f.carry {0x80} else {0};
 
                 self.registers.a = (a >> 1) | cf;
                 self.registers.f.carry = lsb == 1;
                 self.registers.f.zero  = self.registers.a == 0;
             },
             
-            RR     => {
+            RR(target)=> {
                 let val = self.get_register_u8(target);
                 let lsb = val & 0x1;
-                let cf = if self.registers.f.carry {8} else {0};
+                let cf = if self.registers.f.carry {0x80} else {0};
 
                 self.set_register_u8(target, (a >> 1 | cf));
                 self.registers.f.carry = lsb == 1;
-                self.reigsters.f.zero  = self.get_register_u8(target) == 0;
+                self.registers.f.zero  = self.get_register_u8(target) == 0;
             }
 
             DAA    => { 
@@ -212,10 +213,9 @@ impl CPU {
                 self.handle_load(to, from);
             }
 
-            LDHLSP(from) => {
-                // Literally ONE CASE like GO AWAY 
+            LD16(to, from) => {
                 let value = self.get_register_u16(from);
-                self.registers.set_hl(value);
+                self.set_register_u16(to, value);
             }
 
             // Jumps
@@ -254,8 +254,28 @@ impl CPU {
             }
 
             SET(_pos, target) => {
-                
+                let bitset:u8 = 0x1 << (7 - _pos);
+                let val = self.get_register_u8(target);
+
+                self.set_register_u8(target, val | bitset);
             }
+
+            RES(_pos, target) => {
+                let mask:u8 = !(0x1 << (7 - _pos));
+                let val = self.get_register_u8(target);
+
+                self.set_register_u8(target, val & mask);
+            }
+
+            SWAP(target) => {
+                let val = self.get_register_u8(target);
+                let msb = val >> 4;
+                self.set_register_u8(target, msb | val << 4);
+            }
+
+            PUSH(target) => { self.bus.push(target); }
+            POP(target)  => { self.set_register_u8(target, self.bus.pop())}
+            
             
             _ => {}
         }
@@ -271,7 +291,9 @@ impl CPU {
             E => { self.registers.e }, F => { u8::from(self.registers.f) },
             H => { self.registers.h }, L => {          self.registers.l },
             
-            U8 => { self.bus.read_increment() },
+            U8      => {               self.bus.read_increment() },
+            SPU8    => { self.bus.sp | self.bus.read_increment() as u16 },
+
 
             // Relative targets
             _ => { self.bus.read_byte( self.get_rel_loc(target) ) },
@@ -317,8 +339,18 @@ impl CPU {
         use AllRegisters::*;
         
         match target {
-            AF => { self.registers.set_af(value) }, BC => { self.registers.set_bc(value) },
-            DE => { self.registers.set_de(value) }, HL => { self.registers.set_hl(value) },
+            AF => { self.registers.set_af(value) }, BC   => { self.registers.set_bc(value) },
+            DE => { self.registers.set_de(value) }, HL   => { self.registers.set_hl(value) },
+            SP => { self.bus.sp = value; },         
+            RU16 => { 
+                // Little endian?
+                let msb = (value & 0xF0) >> 4;
+                let lsb = value & 0xF;
+
+                let loc:u16 = (self.bus.read_increment() as u16)| ((self.bus.read_increment() as u16) << 8);
+
+                self.bus.write_byte(loc, msb | lsb);
+            },
 
             _ => {}
         }
@@ -335,7 +367,6 @@ impl CPU {
             
             RFFC    => { 0xFF00      | self.registers.c as u16 },
             RFFU8   => { 0xFF00      | self.bus.read_increment() as u16 },
-            RSPU8   => { self.bus.sp | self.bus.read_increment() as u16 },
 
             RU16    => {
                 let lower_nibble = self.bus.read_increment() as u16;
@@ -351,11 +382,11 @@ impl CPU {
         use FlagChecks::*;
 
         match condition {
-            NotZero  => { !self.registers.f.zero  },
-            Zero     => {  self.registers.f.zero  },
-            NotCarry => { !self.registers.f.carry },
-            Carry    => {  self.registers.f.carry },
-            Always   => {  true                   },
+            FNZ => { !self.registers.f.zero  },
+            FZ  => {  self.registers.f.zero  },
+            FNC => { !self.registers.f.carry },
+            FC  => {  self.registers.f.carry },
+            FA  => {  true                   },
         }
     }
 

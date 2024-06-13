@@ -3,7 +3,7 @@
 // Store AllInstructionss in enum
 pub(crate) enum AllInstructions {
     // No target register
-    NOP, HALT, STOP, DI, EI, RLCA, RLA,
+    NOP, EMPTY, HALT, STOP, DI, EI, RLCA, RLA,
     RRCA, RRA, DAA, CPL, SCF, CCF,
 
     // Arithmetic
@@ -13,14 +13,15 @@ pub(crate) enum AllInstructions {
 
     // Loads
     LD(AllRegisters, AllRegisters), LDI(AllRegisters, AllRegisters), LDD(AllRegisters, AllRegisters),
-    LDH(AllRegisters, AllRegisters), LDHLSP(AllRegisters),
+    LDH(AllRegisters, AllRegisters), LD16(AllRegisters, AllRegisters),
 
     // 16-bit arithmetic
     ADD16(AllRegisters), ADC16(AllRegisters), INC16(AllRegisters), DEC16(AllRegisters),
 
-    // Jumps
+    // Jumps + stack 
     JP(FlagChecks, AllRegisters), JR(FlagChecks, AllRegisters),
     CALL(FlagChecks, AllRegisters), RET(FlagChecks), RETI(FlagChecks), RST(u8),
+    PUSH(AllRegisters), POP(AllRegisters),
 
     // Bitwise operations
     BIT(u8, AllRegisters), RES(u8, AllRegisters), SET(u8, AllRegisters),
@@ -41,11 +42,12 @@ pub(crate) enum AllRegisters {
     // Relative targets
     RAF,   RBC,   RDE, 
     RHL,   RFFC,  RFFU8, 
-    RSPU8, RU16, 
+    SPU8, RU16, 
 }
 
 // Store possible flag checks
-pub(crate) enum FlagChecks { NotZero, Zero, NotCarry, Carry, Always }
+pub(crate) enum FlagChecks { FNZ, FZ, FNC, FC, FA }
+pub(crate) enum RstParameters { R00H, R08H, R10H, R18H, R20H, R28H, R30H, R38H }
 
 // Store possible interrupt IDs
 pub(crate) enum InterruptIDs {  }
@@ -63,15 +65,62 @@ impl AllInstructions {
     pub fn from_byte(byte: u8) -> Option<AllInstructions> {
         use AllInstructions::*;
         use AllRegisters::*;
+        use FlagChecks::*;
+        use RstParameters::*;
 
-        match byte {
-            0x00 => Some(NOP),
-            
-            0x03 => Some(INC(BC)),
-            0x04 => Some(INC(B)),
-            0x05 => Some(DEC(B)),
-            _ => Some(NOP),
-        }
+        Some(match byte {
+            0x00 => NOP,            0x01 => LD16(BC, U16),  0x02 => LD(RBC, A),     0x03 => INC16(BC),
+            0x04 => INC(B),         0x05 => DEC(B),         0x06 => LD(B, U8),      0x07 => RLCA,
+            0x08 => LD16(RU16, SP), 0x09 => ADD16(BC),      0x0A => LD(A, RBC),     0x0B => DEC16(BC),
+            0x0C => INC(C),         0x0D => DEC(C),         0x0E => LD(C, U8),      0x0F => RRCA,
+            0x10 => STOP,           0x11 => LD16(DE, U16),  0x12 => LD(RDE, A),     0x13 => INC16(DE),
+            0x14 => INC(D),         0x15 => DEC(D),         0x16 => LD(D, U8),      0x17 => RLA,
+            0x18 => JR(FA, U8),     0x19 => ADD16(DE),      0x1A => LD(A, RDE),     0x1B => DEC16(DE),
+            0x1C => INC(E),         0x1D => DEC(E),         0x1E => LD(E, U8),      0x1F => RRA,
+            0x20 => JR(FNZ, U8),    0x21 => LD16(HL, U16),  0x22 => LDI(RHL, A),    0x23 => INC16(HL),
+            0x24 => INC(H),         0x25 => DEC(H),         0x26 => LD(H, U8),      0x27 => DAA,
+            0x28 => JR(FZ, U8),     0x29 => ADD16(HL),      0x2A => LDI(A, RHL),    0x2B => DEC(HL),
+            0x2C => INC(L),         0x2D => DEC(L),         0x2E => LD(L, U8),      0x2F => CPL,
+            0x30 => JR(FNC, U8),    0x31 => LD16(SP, U16),  0x32 => LDD(RHL, A),    0x33 => INC16(SP),
+            0x34 => INC(RHL),       0x35 => DEC(RHL),       0x36 => LD(RHL, U8),    0x37 => SCF,
+            0x38 => JR(FC, U8),     0x39 => ADD16(SP),      0x3A => LDD(A, RHL),    0x3B => DEC(SP),
+            0x3C => INC(A),         0x3D => DEC(A),         0x3E => LD(A, U8),      0x3F => CCF,
+
+            0x40...0xC0 => {
+                let r = match (byte & 0x7) { 
+                    0x0 => B, 0x1 => C, 0x2 => D,  0x3 => E, 
+                    0x4 => H, 0x5 => L, 0x6 => RHL, 0x7 => A 
+                };
+
+                let op = match (((byte - 0x40) >> 0x3)) {
+                    0x0 => LD(B, r), 0x1 => LD(C, r), 0x2 => LD(D, r),   0x3 => LD(E, r),
+                    0x4 => LD(H, r), 0x5 => LD(L, r), 0x6 => LD(RHL, r), 0x7 => LD(A, r),
+                    0x8 => ADD(r),   0x9 => ADC(r),   0xA => SUB(r),     0xB => SBC(r),
+                    0xC => AND(r),   0xD => XOR(r),   0xE => OR(r),      0xF => CP(r),  
+                };
+
+                if byte == 0x76 {HALT} else {op}
+            }
+
+            0xC0 => RET(FNZ),       0xC1 => POP(BC),        0xC2 => JP(FNZ, U16),   0xC3 => JP(FA, U16),
+            0xC4 => CALL(FNZ, U16), 0xC5 => PUSH(BC),       0xC6 => ADD(U8),        0xC7 => RST(R00H),    
+            0xC8 => RET(FZ),        0xC9 => RET(FA),        0xCA => JP(FZ, U16),    0xCB => NOP, // Should never be referenced
+            0xCC => CALL(FZ, U16),  0xCD => CALL(FA, U16),  0xCE => ADC(U8),        0xCF => RST(R08H),
+            0xD0 => RET(FNC),       0xD1 => POP(DE),        0xD2 => JP(FNC, U16),   0xD3 => EMPTY, 
+            0xD4 => CALL(FNC, U16), 0xD5 => PUSH(DE),       0xD6 => SUB(U8),        0xD7 => RST(R10H),
+            0xD8 => RET(FC),        0xD9 => RETI(FA),       0xDA => JP(FC, U16),    0xDB => EMPTY,
+            0xDC => CALL(C, U16),   0xDD => EMPTY,          0xDE => SBC(U8),        0xDF => RST(R18H),
+            0xE0 => LD(RFFU8, A),   0xE1 => POP(HL),        0xE2 => LD(RFFC, A),    0xE3 => EMPTY,
+            0xE4 => EMPTY,          0xE5 => PUSH(HL),       0xE6 => AND(U8),        0xE7 => RST(R20H),
+            0xE8 => ADDSP(U8),      0xE9 => JP(FA, HL),     0xEA => LD(RU16, A),    0xEB => EMPTY,
+            0xEC => EMPTY,          0xED => EMPTY,          0xEE => XOR(U8),        0xEF => RST(R28H),
+            0xF0 => LD(A, RFFU8),   0xF1 => POP(AF),        0xF2 => LD(A, RFFC),    0xF3 => DI,
+            0xF4 => EMPTY,          0xF5 => PUSH(AF),       0xF6 => OR(U8),         0xF7 => RST(R30H),
+            0xF8 => LD16(HL, SPU8), 0xF9 => LD(SP, HL),     0xFA => LD(A, RU16),    0xFB => EI,
+            0xFC => EMPTY,          0xFD => EMPTY,          0xFE => CP(U8),         0xFF => RST(R38H),
+
+            _ => NOP,
+        })
     }
 
     pub fn from_prefixed_byte(byte: u8) -> Option<AllInstructions> {
@@ -96,6 +145,6 @@ impl AllInstructions {
             0x1C => SET(4, r), 0x1D => SET(5, r), 0x1E => SET(6, r), 0x1F => SET(7, r),   
         };
 
-        return Some(op);
+        Some(op)
     }
 }
