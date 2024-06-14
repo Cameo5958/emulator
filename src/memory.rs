@@ -11,6 +11,7 @@ const BOOT_ROM: [u8; 0xFF] = [
     0x01
     ];
 
+// Memory mapping 
 const ROM_START:    u16 = 0x0000; const VROM_START:   u16 = 0x4000; const VRAM_START:   u16 = 0x8000; const CRAM_START:   u16 = 0xA000;
 const WRAM_START:   u16 = 0xC000; const ERAM_START:   u16 = 0xE000; const UNUSED:       u16 = 0xFEA0; const OAM_START:    u16 = 0xFE00;
 const IORG_START:   u16 = 0xFF00; const HRAM_START:   u16 = 0xFF80;
@@ -19,6 +20,10 @@ const ROM_END:  u16 = VROM_START - 1; const VROM_END: u16 = VRAM_START - 1; cons
 const CRAM_END: u16 = WRAM_START - 1; const WRAM_END: u16 = ERAM_START - 1; const ERAM_END: u16 = UNUSED - 1;
 const UNUSED_D: u16 = OAM_START - 1;  const OAM_END:  u16 = IORG_START - 1; const IORG_END: u16 = HRAM_START - 1;
 const HRAM_END: u16 = 0xFFFE;
+
+// Input/output registers
+const TIMER_START:  u16 = 0xFF04; 
+const TIMER_END:    u16 = 0xFF07;
 
 pub(crate) struct MemoryBus {
     pub memory:    [u8; 0xFFFF],
@@ -33,7 +38,7 @@ impl MemoryBus {
     pub fn new(mb: &Emulator) -> Self {
         pub fn new(mb: &Motherboard) -> Self {
             let mut memory: [u8; 0xFFFF] = [0; 0xFFFF];
-            memory[..0xFF].copy_from_slice(&boot_rom);
+            memory[..0xFF].copy_from_slice(&BOOT_ROM);
     
             MemoryBus { memory: memory, pc: 0x0, sp: 0x0, ime: false, sup: mb, inf: 0x0 };
         }
@@ -47,6 +52,7 @@ impl MemoryBus {
             CRAM_START...CRAM_END => { }
             UNUSED...UNUSED_D => { 0x00 }
             OAM_START...OAM_END => {}
+
             _ => self.memory[addr as usize]
         }
         // return self.memory[addr as usize];

@@ -27,16 +27,15 @@ impl CPU {
 
         // Check for interrupts
         if self.bus.ime && self.bus.inf != 0 {
-            let target: InterruptIDs = None;
             let query = self.bus.inf;
 
-            if      query & VBlank  != 0 { target = VBlank  }
-            else if query & LCDStat != 0 { target = LCDStat }
-            else if query & Timer   != 0 { target = Timer   }
-            else if query & Serial  != 0 { target = Serial  }
-            else if query & Joypad  != 0 { target = Joypad  }
+            self.handle_interrupts(
+                 if query & VBlank  != 0 { VBlank  }
+            else if query & LCDStat != 0 { LCDStat }
+            else if query & Timer   != 0 { Timer   }
+            else if query & Serial  != 0 { Serial  }
+            else if query & Joypad  != 0 { Joypad  });
 
-            self.handle_interrupts(target);
         }
         
         // Only execute if not halted
@@ -52,9 +51,7 @@ impl CPU {
         }
         
         let Some(instruction) = AllInstructions::decode(instruction_byte, prefixed) else {todo!("do nothing!")};
-        let push_timer = self.execute(instruction);
-
-        
+        let tcycles = self.execute(instruction) * 4;
     }
 
     fn execute(&mut self, instruction: AllInstructions) -> u8{ 
@@ -300,18 +297,14 @@ impl CPU {
 
             LDI(to, from) => {
                 self.handle_load(to, from);
-                
-                let value = self.inc(self.get_register_u8(from));
-                self.set_register_u8(from, value);
+                self.inchl();
 
                 2
             }
 
             LDD(to, from) => {
                 self.handle_load(to, from);
-
-                let value = self.dec(self.get_register_u8(from));
-                self.set_register_u8(from, value);
+                self.dechl();
 
                 2
             }

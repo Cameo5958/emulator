@@ -1,4 +1,4 @@
-use crate::{ cpu::CPU, memory::MemoryBus, ppu::PPU, apu::APU, input::IPU, };
+use crate::{ cpu::CPU, memory::MemoryBus, ppu::PPU, apu::APU, input::IPU, timer::Timer};
 
 struct ROM {
     bytes: [u8; 0x7FFFFF],
@@ -21,6 +21,7 @@ pub(crate) struct Emulator {
     pub apu: APU, 
     pub ppu: PPU,
     pub ipu: IPU,
+    pub timer: Timer,
 
     pub mem: MemoryBus,
 }
@@ -34,15 +35,17 @@ impl Emulator {
             apu: None,
             ppu: None,
             ipu: None,
+            timer: None,
 
             mem: None,
         };
 
-        new_mb.mem = MemoryBus::new(&new_mb);
-        new_mb.cpu = CPU::new(&new_mb);
-        new_mb.apu = APU::new(&new_mb);
-        new_mb.ppu = PPU::new(&new_mb);
-        new_mb.ipu = IPU::new(&new_mb);
+        new_mb.mem      = MemoryBus::new(&new_mb);
+        new_mb.cpu      = CPU::new(&new_mb);
+        new_mb.apu      = APU::new(&new_mb);
+        new_mb.ppu      = PPU::new(&new_mb);
+        new_mb.ipu      = IPU::new(&new_mb);
+        new_mb.timer    = Timer::new(&new_mb);
 
         new_mb
     }
