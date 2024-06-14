@@ -40,8 +40,8 @@ impl MemoryBus {
 
     pub fn read_byte(&self, addr: u16) -> u8 {
         match addr {
-            ROM_START...ROM_END => { self.sup.rom[addr as usize] }
-            VROM_START...VROM_END => { }
+            // ROM_START...ROM_END => { self.sup.rom[addr as usize] }
+            // VROM_START...VROM_END => { }
             VRAM_START...VRAM_END => { self.sup.ppu.read_vram(addr - VRAM_START) }
             CRAM_START...CRAM_END => { }
             UNUSED...UNUSED_D => { 0x00 }
@@ -69,6 +69,8 @@ impl MemoryBus {
             _ => self.memory[addr as usize]
         }        
     }
+
+    pub fn write_rom(&mut self) {}
 
     pub fn read_increment(&self) -> u8 {
         let data = self.memory[self.pc as usize];
