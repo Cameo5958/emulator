@@ -26,7 +26,7 @@ impl CPU {
         use InterruptIDs::*;
 
         // Check for interrupts
-        if self.bus.ime && self.bus.interrupt_flags != 0 {
+        if self.bus.ime && self.bus.inf != 0 {
             let target: InterruptIDs = None;
             let query = self.bus.inf;
 
