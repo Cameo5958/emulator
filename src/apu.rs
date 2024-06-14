@@ -2,7 +2,7 @@ use std::sync::mpsc::{self, Reciever, Sender};
 use std::f32::consts::PI;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use capl::{SampleFormat, SampleRate, StreamConfig};
-use crate::memory::MemoryBus;
+use crate::emulator::Emulator;
 
 const SAMPLE_RATE: f32 = 44100.0;
 
@@ -157,12 +157,12 @@ pub(crate) struct APU {
 }
 
 impl APU {
-    pub fn new(memory_bus: &MemoryBus) -> Self {
+    pub fn new(em: &Emulator) -> Self {
         APU {
-            ch1: SquareWaveChannel::new( true, 0xFF10, memory_bus),
-            ch2: SquareWaveChannel::new(false, 0xFF15, &memory_bus),
-            ch3: WaveformChannel::new(&memory_bus),
-            ch4: NoiseChannel::new(&memory_bus),
+            ch1: SquareWaveChannel::new( true, 0xFF10, &em.mem),
+            ch2: SquareWaveChannel::new(false, 0xFF15, &em.mem),
+            ch3: WaveformChannel::new(&em.mem),
+            ch4: NoiseChannel::new(&em.mem),
         }
     }
     

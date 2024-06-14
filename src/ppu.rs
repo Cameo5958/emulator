@@ -1,3 +1,5 @@
+use crate::emulator::Emulator;
+
 const VRAM_BEGIN:   usize = 0x8000;
 const VRAM_END:     usize = 0x9FFF;
 const VRAM_SIZE:    usize = VRAM_END - VRAM_BEGIN + 1;
@@ -10,17 +12,24 @@ fn empty_tile() -> Tile {
     [[TilePixelValue::Zero; 8]; 8]
 }
 
-struct GPU {
+pub(crate) struct PPU {
     vram:       [u8; VRAM_SIZE],
     tile_set:   [Tile; 384],
 }
 
-impl GPU {
-    fn read_vram(&self, address: usize) -> u8 {
+impl PPU {
+    pub fn new(em: Emulator) {
+        PPU {
+            vram:       [0x00; VRAM_SIZE],
+            tile_set:   [Tile; 384],
+        }
+    }
+
+    pub fn read_vram(&self, address: usize) -> u8 {
         return self.vram[address];
     }
 
-    fn write_vram(&mut self, index:usize, value: u8) {
+    pub fn write_vram(&mut self, index:usize, value: u8) {
         self.vram[index] = value;
 
         if index >= 0x1800 { return }

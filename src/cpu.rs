@@ -1,6 +1,7 @@
 // Represent the CPU using a struct
 
 use crate::{
+    emulator::Emulator,
     registers::{FlagsRegister, Registers},
     memory::MemoryBus,
     instructions::{AllRegisters, AllInstructions, FlagChecks, InterruptIDs},
@@ -15,16 +16,16 @@ pub(crate) struct CPU {
 
 // Represents the Core Processing Unit's instructions.
 impl CPU { 
-    pub fn new() -> Self {
+    pub fn new(em: &Emulator) -> Self {
         CPU {
             // Initialize state
             registers   : Registers::new(),
-            bus         : MemoryBus::new(), 
+            bus         : &em.mem, 
             halted      : false,
         }
     }
 
-    fn step(&mut self) {
+    pub fn step(&mut self) {
         // Only execute if not halted
         if self.halted { return }
 
