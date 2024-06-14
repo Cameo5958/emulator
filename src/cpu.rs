@@ -434,6 +434,15 @@ impl CPU {
             POP(target)  => { self.set_register_u8(target, self.bus.pop()); 3 }
 
             RST(param) => {
+                use RstParameters::*;
+                let target: u8 = match param {
+                    R00H => 0x00, R08H => 0x08, R10H => 0x10, R18H => 0x18,
+                    R20H => 0x20, R28H => 0x28, R30H => 0x30, R38H => 0x38,
+                };
+
+                self.bus.push( self.bus.pc );
+                self.bus.jump( target, true);
+
                 4
             }
         }
