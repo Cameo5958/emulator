@@ -18,6 +18,9 @@ pub(crate) enum AllInstructions {
     // 16-bit arithmetic
     ADD16(AllRegisters), ADC16(AllRegisters), INC16(AllRegisters), DEC16(AllRegisters),
 
+    // Add stack pointer
+    ADDSP,
+
     // Jumps + stack 
     JP(FlagChecks, AllRegisters), JR(FlagChecks, AllRegisters),
     CALL(FlagChecks, AllRegisters), RET(FlagChecks), RETI(FlagChecks), RST(u8),
@@ -88,7 +91,7 @@ impl AllInstructions {
 
             0x40...0xC0 => {
                 let r = match (byte & 0x7) { 
-                    0x0 => B, 0x1 => C, 0x2 => D,  0x3 => E, 
+                    0x0 => B, 0x1 => C, 0x2 => D,   0x3 => E, 
                     0x4 => H, 0x5 => L, 0x6 => RHL, 0x7 => A 
                 };
 
@@ -112,7 +115,7 @@ impl AllInstructions {
             0xDC => CALL(C, U16),   0xDD => EMPTY,          0xDE => SBC(U8),        0xDF => RST(R18H),
             0xE0 => LD(RFFU8, A),   0xE1 => POP(HL),        0xE2 => LD(RFFC, A),    0xE3 => EMPTY,
             0xE4 => EMPTY,          0xE5 => PUSH(HL),       0xE6 => AND(U8),        0xE7 => RST(R20H),
-            0xE8 => ADDSP(U8),      0xE9 => JP(FA, HL),     0xEA => LD(RU16, A),    0xEB => EMPTY,
+            0xE8 => ADDSP,          0xE9 => JP(FA, HL),     0xEA => LD(RU16, A),    0xEB => EMPTY,
             0xEC => EMPTY,          0xED => EMPTY,          0xEE => XOR(U8),        0xEF => RST(R28H),
             0xF0 => LD(A, RFFU8),   0xF1 => POP(AF),        0xF2 => LD(A, RFFC),    0xF3 => DI,
             0xF4 => EMPTY,          0xF5 => PUSH(AF),       0xF6 => OR(U8),         0xF7 => RST(R30H),

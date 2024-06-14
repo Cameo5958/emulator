@@ -9,6 +9,8 @@ pub(crate) struct FlagsRegister {
     pub half_carry: bool,   pub carry: bool,
 }
 
+pub const 
+
 impl FlagsRegister {
     pub fn new() -> Self {
         FlagsRegister { zero: false,        subtract: false,

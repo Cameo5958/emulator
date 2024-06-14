@@ -140,6 +140,12 @@ impl CPU {
                 self.registers.set_hl(new_value);
             },
 
+            ADDSP => {
+                target = AllRegisters::U8;
+                let value = self.get_register_u8(U8);
+                self.bus.sp = self.add(value, carry);
+            }
+
             SUB(target) => {
                 let value = self.get_register_u8(target);
                 self.registers.a = self.sub(value, false);
