@@ -13,17 +13,17 @@ pub(crate) enum AllInstructions {
 
     // Loads
     LD(AllRegisters, AllRegisters), LDI(AllRegisters, AllRegisters), LDD(AllRegisters, AllRegisters),
-    LDH(AllRegisters, AllRegisters), LD16(AllRegisters, AllRegisters),
+    LD16(AllRegisters, AllRegisters),
 
     // 16-bit arithmetic
-    ADD16(AllRegisters), ADC16(AllRegisters), INC16(AllRegisters), DEC16(AllRegisters),
+    ADD16(AllRegisters), INC16(AllRegisters), DEC16(AllRegisters),
 
     // Add stack pointer
     ADDSP,
 
     // Jumps + stack 
     JP(FlagChecks, AllRegisters), JR(FlagChecks, AllRegisters),
-    CALL(FlagChecks, AllRegisters), RET(FlagChecks), RETI(FlagChecks), RST(u8),
+    CALL(FlagChecks, AllRegisters), RET(FlagChecks), RETI(FlagChecks), RST(RstParameters),
     PUSH(AllRegisters), POP(AllRegisters),
 
     // Bitwise operations
@@ -45,7 +45,7 @@ pub(crate) enum AllRegisters {
     // Relative targets
     RAF,   RBC,   RDE, 
     RHL,   RFFC,  RFFU8, 
-    SPU8, RU16, 
+    SPU8,  RU16, 
 }
 
 // Store possible flag checks
@@ -53,7 +53,7 @@ pub(crate) enum FlagChecks { FNZ, FZ, FNC, FC, FA }
 pub(crate) enum RstParameters { R00H, R08H, R10H, R18H, R20H, R28H, R30H, R38H }
 
 // Store possible interrupt IDs
-pub(crate) enum InterruptIDs {  }
+pub(crate) enum InterruptIDs { VBlank = 0x01, LCDStat = 0x02, Timer = 0x04, Serial = 0x08, Joypad = 0x10 }
 
 // Implement conversion from byte to AllInstructions
 impl AllInstructions {

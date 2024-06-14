@@ -26,6 +26,7 @@ pub(crate) struct MemoryBus {
     pub sp:        u16,
     pub ime:      bool,
     pub sup: &Emulator,
+    pub inf:        u8,
 }
 
 impl MemoryBus {
@@ -34,7 +35,7 @@ impl MemoryBus {
             let mut memory: [u8; 0xFFFF] = [0; 0xFFFF];
             memory[..0xFF].copy_from_slice(&boot_rom);
     
-            MemoryBus { memory: memory, pc: 0x0, sp: 0x0, ime: false, sup: mb };
+            MemoryBus { memory: memory, pc: 0x0, sp: 0x0, ime: false, sup: mb, inf: 0x0 };
         }
     }
 

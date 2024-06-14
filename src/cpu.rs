@@ -1,10 +1,7 @@
 // Represent the CPU using a struct
 
 use crate::{
-    emulator::Emulator,
-    registers::{FlagsRegister, Registers},
-    memory::MemoryBus,
-    instructions::{AllRegisters, AllInstructions, FlagChecks, InterruptIDs},
+    emulator::Emulator, instructions::{AllInstructions, AllRegisters, FlagChecks, InterruptIDs, RstParameters}, memory::MemoryBus, registers::{FlagsRegister, Registers}
 };
 
 pub(crate) struct CPU { 
@@ -26,6 +23,22 @@ impl CPU {
     }
 
     pub fn step(&mut self) {
+        use InterruptIDs::*;
+
+        // Check for interrupts
+        if self.bus.ime && self.bus.interrupt_flags != 0 {
+            let target: InterruptIDs = None;
+            let query = self.bus.inf;
+
+            if      query & VBlank  != 0 { target = VBlank  }
+            else if query & LCDStat != 0 { target = LCDStat }
+            else if query & Timer   != 0 { target = Timer   }
+            else if query & Serial  != 0 { target = Serial  }
+            else if query & Joypad  != 0 { target = Joypad  }
+
+            self.handle_interrupts(target);
+        }
+        
         // Only execute if not halted
         if self.halted { return }
 
@@ -39,27 +52,33 @@ impl CPU {
         }
         
         let Some(instruction) = AllInstructions::decode(instruction_byte, prefixed) else {todo!("do nothing!")};
-        self.execute(instruction);
+        let push_timer = self.execute(instruction);
+
+        
     }
 
-    fn execute(&mut self, instruction: AllInstructions) { 
+    fn execute(&mut self, instruction: AllInstructions) -> u8{ 
         use AllInstructions::*;
+        use AllRegisters::*;
 
         match instruction {
-            // No target registers
-            NOP     => { }
-            EMPTY   => { }
-            HALT    => { self.halted = true; }
-            STOP    => { }
-            DI      => { self.bus.ime = false; }
-            EI      => { self.bus.ime = true; }
+            // DONE
+            NOP     => { 1 }
+            EMPTY   => { 0 }
+            HALT    => { self.halted = true; 1 }
+            STOP    => { 1 }
+            DI      => { self.bus.ime = false; 1 }
+            EI      => { self.bus.ime = true; 1 }
+
+
             RLCA    => {
                 let a   = self.registers.a;
                 let msb = a & 0x80 >> 7;
 
                 self.registers.a = (a << 1) | msb;
-                self.registers.f.carry = msb == 1;
-                self.registers.f.zero  = self.registers.a == 0;
+                self.registers.set_flags(false, false, false, msb == 1);
+
+                1
             },
 
             RLA    => {
@@ -68,18 +87,30 @@ impl CPU {
                 let cf  = if self.registers.f.carry {1} else {0};
 
                 self.registers.a = (a << 1) | cf;
-                self.registers.f.carry = msb == 1;
-                self.registers.f.zero  = self.registers.a == 0;
+                self.registers.set_flags(false, false, false, msb == 1);
+
+                1
             },
+
+            RLC(target) => {
+                let val   = self.get_register_u8(target);
+                let msb = val & 0x80 >> 7;
+
+                self.set_register_u8(target, (val << 1) | msb);
+                self.registers.set_flags((val << 1) | msb == 0, false, false, msb == 1);
+
+                if target == RHL { 4 } else { 2 }
+            }
 
             RL(target) => {
                 let val = self.get_register_u8(target);
                 let msb = val & 0x80 >> 7;
                 let cf  = if self.registers.f.carry {1} else {0};
 
-                self.set_register_u8(target, (a << 1) | cf);
-                self.registers.f.carry = msb == 1;
-                self.registers.f.zero  = self.get_register_u8(target) == 0;
+                self.set_register_u8(target, (val << 1) | cf);
+                self.registers.set_flags((val << 1 | cf) == 0, false, false, msb == 1);
+
+                if target == RHL { 4 } else { 2 }
             }
 
             RRCA    => { 
@@ -87,8 +118,9 @@ impl CPU {
                 let lsb = a & 0x1;
 
                 self.registers.a = (a >> 1) | lsb;
-                self.registers.f.carry = lsb == 1;
-                self.registers.f.zero  = self.registers.a == 0;
+                self.registers.set_flags(false, false, false, msb == 1);
+
+                1
             },
 
             RRA    => { 
@@ -97,8 +129,19 @@ impl CPU {
                 let cf  =  if self.registers.f.carry {0x80} else {0};
 
                 self.registers.a = (a >> 1) | cf;
-                self.registers.f.carry = lsb == 1;
-                self.registers.f.zero  = self.registers.a == 0;
+                self.registers.set_flags(false, false, false, msb == 1);
+
+                if target == RHL { 4 } else { 2 }
+            },
+
+            RRC(target)    => { 
+                let val   = self.get_register_u8(target);
+                let lsb = val & 0x1;
+
+                self.set_register_u8(target, (val >> 1) | lsb);
+                self.registers.set_flags((val >> 1) | lsb == 0, false, false, msb == 1);
+
+                if target == RHL { 4 } else { 2 }
             },
             
             RR(target)=> {
@@ -106,99 +149,153 @@ impl CPU {
                 let lsb = val & 0x1;
                 let cf = if self.registers.f.carry {0x80} else {0};
 
-                self.set_register_u8(target, (a >> 1 | cf));
-                self.registers.f.carry = lsb == 1;
-                self.registers.f.zero  = self.get_register_u8(target) == 0;
+                self.set_register_u8(target, (val >> 1 | cf));
+                self.registers.set_flags((val >> 1 | cf) == 0, false, false, lsb == 1);
+
+                2
             }
 
-            DAA    => { 
+            DAA => {
+                let mut a = self.registers.a;
+                if self.registers.f.subtract {
+                    if self.registers.f.half_carry {
+                        a = a.wrapping_sub(0x06);
+                    }
+                    if self.registers.f.carry {
+                        a = a.wrapping_sub(0x60);
+                    }
+                } else {
+                    if self.registers.f.half_carry || (a & 0x0F) > 0x09 {
+                        a = a.wrapping_add(0x06);
+                    }
+                    if self.registers.f.carry || a > 0x9F {
+                        a = a.wrapping_add(0x60);
+                    }
+                }
+            
+                self.registers.f.half_carry = false;
+                self.registers.f.zero = a == 0;
+                self.registers.f.carry |= a > 0x99;
+                self.registers.a = a;
 
+                1
             },
-            CPL    => { self.registers.a = !self.registers.a; }, 
-            SCF    => { self.registers.f.carry = true; },
-            CCF    => { self.registers.f.carry = !self.registers.f.carry; },
+            CPL    => { 
+                self.registers.a = !self.registers.a; 
+                self.registers.f.subtract   = true;
+                self.registers.f.half_carry = true;
+
+                1 
+            }, 
+
+            SCF    => { self.registers.set_flags(self.registers.zero, false, false, true); 1 },
+            CCF    => { self.registers.set_flags(self.registers.zero, false, false, !self.registers.f.carry); 1 },
             
             // One target register
             ADD(target) => {
                 let value = self.get_register_u8(target);
                 self.registers.a = self.add(value, false);
+
+                if target == RHL { 2 } else { 1 }
             },
             
             ADD16(target) => {
                 let value = self.get_register_u16(target);
                 let new_value = self.add_16(value, false);
                 self.registers.set_hl(new_value);
+
+                2
             },
 
             ADC(target) => {
                 let value = self.get_register_u8(target);
                 self.registers.a = self.add(value, true);
-            },
 
-            ADC16(target) => {
-                let value = self.get_register_u16(target);
-                let new_value = self.add_16(value, true);
-                self.registers.set_hl(new_value);
+                if target == RHL { 2 } else { 1 }
             },
 
             ADDSP => {
                 target = AllRegisters::U8;
                 let value = self.get_register_u8(U8);
                 self.bus.sp = self.add(value, carry);
+
+                4
             }
 
             SUB(target) => {
                 let value = self.get_register_u8(target);
                 self.registers.a = self.sub(value, false);
+
+                if target == RHL { 2 } else { 1 }
             },
 
             SBC(target) => {
                 let value = self.get_register_u8(target);
                 self.registers.a = self.sub(value, true);
+
+                if target == RHL { 2 } else { 1 }
             },
 
             AND(target) => {
                 let value = self.get_register_u8(target);
                 self.registers.a = self._and(value);
+
+                if target == RHL { 2 } else { 1 }
             },
 
             OR(target) => {
                 let value = self.get_register_u8(target);
                 self.registers.a = self._or(value);
+
+                if target == RHL { 2 } else { 1 }
             },
 
             XOR(target) => {
                 let value = self.get_register_u8(target);
                 self.registers.a = self._xor(value);
+
+                if target == RHL { 2 } else { 1 }
             },
 
             CP(target) => {
                 let value = self.get_register_u8(target);
                 self.sub(value, false);
+
+                if target == RHL { 2 } else { 1 }
             },
 
             INC(target) => {
                 let value = self.inc(self.get_register_u8(target));
                 self.set_register_u8(target, value);
+
+                if target == RHL { 3 } else { 1 }
             },
 
             INC16(target) => {
                 let value = self.inc_16(self.get_register_u16(target));
                 self.set_register_u16(target, value);
+
+                2
             },
 
             DEC(target) => {
                 let value = self.dec(self.get_register_u8(target));
                 self.set_register_u8(target, value);
+
+                if target == RHL { 3 } else { 1 }
             },
 
             DEC16(target) => {
                 let value = self.dec_16(self.get_register_u16(target));
                 self.set_register_u16(target, value);
+
+                2
             },
 
             LD(to, from) => {
                 self.handle_load(to, from);
+
+                if to == RHL || from == RHL { 2 } else { 1 }
             }
 
             LDI(to, from) => {
@@ -206,6 +303,8 @@ impl CPU {
                 
                 let value = self.inc(self.get_register_u8(from));
                 self.set_register_u8(from, value);
+
+                2
             }
 
             LDD(to, from) => {
@@ -213,25 +312,28 @@ impl CPU {
 
                 let value = self.dec(self.get_register_u8(from));
                 self.set_register_u8(from, value);
-            }
 
-            LDH(to, from) => {
-                // Just a different name
-                self.handle_load(to, from);
+                2
             }
 
             LD16(to, from) => {
                 let value = self.get_register_u16(from);
                 self.set_register_u16(to, value);
+
+                3
             }
 
             // Jumps
             JP(cond, to) => {
                 self.bus.jump( self.get_register_u16(to), self.get_cond_met(cond) );
+
+                if to == HL { 1 } else if self.get_cond_met(cond) { 4 } else { 3 } 
             }
 
             JR(cond, to) => {
                 self.bus.jump( self.bus.pc + self.get_register_u8(to) as u16, self.get_cond_met(cond) );
+
+                if self.get_cond_met(cond) { 3 } else { 2 }
             }
 
             CALL(cond, to) => {
@@ -240,6 +342,8 @@ impl CPU {
                 // Push current program counter onto stack
                 self.bus.push(self.bus.pc);
                 self.bus.jump( self.get_register_u16(to), true);
+
+                if self.get_cond_met(cond) { 6 } else { 3 }
             },
 
             RET(cond) => {
@@ -248,16 +352,27 @@ impl CPU {
                     // Reset program counter
                     self.bus.pc = self.bus.pop();
                 }
+
+                if cond == FlagChecks::FA { 4 } else if self.get_cond_met(cond) { 5 } else { 2 }
             }
 
             RETI(cond) => {
                 if self.get_cond_met(cond) {
                     self.bus.pc = self.bus.pop();
+                    self.bus.ime = true;
                 }
+
+                4
             }
 
             BIT(_pos, target) => {
-                let check = self.get_register_u8(target) >> (7 - _pos) & 0xE == 1;
+                let val = self.get_register_u8(target);
+                self.registers.f.zero = (val & (1 << pos)) == 0;
+                self.registers.f.subtract = false;
+                self.registers.f.carry = true;
+                self.registers.set_flags(val & (1 << pos) == 0, false, true, self.registers.f.carry);
+
+                if target == RHL { 3 } else { 2 }
             }
 
             SET(_pos, target) => {
@@ -265,6 +380,8 @@ impl CPU {
                 let val = self.get_register_u8(target);
 
                 self.set_register_u8(target, val | bitset);
+
+                if target == RHL { 4 } else { 2 }
             }
 
             RES(_pos, target) => {
@@ -272,19 +389,53 @@ impl CPU {
                 let val = self.get_register_u8(target);
 
                 self.set_register_u8(target, val & mask);
+
+                if target == RHL { 4 } else { 2 }
             }
 
             SWAP(target) => {
                 let val = self.get_register_u8(target);
                 let msb = val >> 4;
                 self.set_register_u8(target, msb | val << 4);
+                self.registers.set_flags((msb | val << 4) == 0, false, false, false);
+
+                if target == RHL { 4 } else { 2 }
             }
 
-            PUSH(target) => { self.bus.push(target); }
-            POP(target)  => { self.set_register_u8(target, self.bus.pop())}
-            
-            
-            _ => {}
+            SLA(target) => {
+                let val = self.get_register_u8(target);
+                self.registers.set_flags(val << 1 == 0, false, false, val & 0x80 == 0x80);
+                
+                self.set_register_u8(target, val << 1);
+
+                if target == RHL { 4 } else { 2 }
+            }
+
+            SRA(target) => {
+                let val = self.get_register_u8(target);
+                let sign = val & 0x80;
+                self.registers.set_flags(val >> 1 | sign == 0, false, false, val & 0x1);
+
+                self.set_register_u8(target, val >> 1 | sign);
+                
+                if target == RHL { 4 } else { 2 }
+            }
+
+            SRL(target) => {
+                let val = self.get_register_u8(target);
+                self.registers.set_flags(val >> 1 == 0, false, false, val & 0x1);
+
+                self.set_register_u8(target, val >> 1);
+
+                if target == RHL { 4 } else { 2 }
+            }
+
+            PUSH(target) => { self.bus.push(target); 4 }
+            POP(target)  => { self.set_register_u8(target, self.bus.pop()); 3 }
+
+            RST(param) => {
+                4
+            }
         }
     }
 
@@ -402,8 +553,7 @@ impl CPU {
         let (new_value, did_overflow) = self.registers.a.overflowing_add(value + extra);
         
         self.registers.set_flags(
-            new_value == 0, false, did_overflow, 
-            (self.registers.a & 0xF) + (value & 0xF) > 0xF,
+            new_value == 0, false, (self.registers.a & 0xF) + (value & 0xF) > 0xF, did_overflow, 
         );
 
         return new_value;
@@ -414,8 +564,8 @@ impl CPU {
         let (new_value, did_overflow) = self.registers.get_hl().overflowing_add(value + extra);
 
         self.registers.set_flags(
-            new_value == 0, false, did_overflow, 
-            (self.registers.get_hl() & 0xFF) + (value & 0xFF) > 0xFF,
+            new_value == 0, false, (self.registers.get_hl() & 0xFF) + (value & 0xFF) > 0xFF, did_overflow, 
+
         );
 
         return new_value;
@@ -426,8 +576,8 @@ impl CPU {
         let (new_value, did_overflow) = self.registers.a.overflowing_sub(value + extra);
 
         self.registers.set_flags(
-            new_value == 0, true, did_overflow,
-            (self.registers.a & 0xF).overflowing_sub(value & 0xF).1
+            new_value == 0, true, (self.registers.a & 0xF).overflowing_sub(value & 0xF).1, did_overflow,
+
         );
 
         return new_value;
@@ -458,7 +608,7 @@ impl CPU {
         let new_value = value + 1;
 
         self.registers.set_flags(
-            new_value == 0, false, self.registers.f.carry, (new_value & 0xF) == 0
+            new_value == 0, false, (new_value & 0xF) == 0, self.registers.f.carry, 
         );
 
         return new_value;
@@ -466,18 +616,25 @@ impl CPU {
 
     fn inc_16(&mut self, value: u16) -> u16 {
         let new_value = value + 1;
-        self.registers.set_flags(
-            new_value == 0, false, self.registers.f.carry, (new_value & 0xFF) == 0
-        );
 
         return new_value;
+    }
+
+    fn inchl(&mut self) {
+        let value = self.get_register_u16(AllRegisters::HL);
+        self.set_register_u16(AllRegisters::HL, inc_16(value));
+    }
+
+    fn dechl(&mut self) {
+        let value = self.get_register_u16(AllRegisters::HL);
+        self.set_register_u16(AllRegisters::HL, dec_16(value));
     }
 
     fn dec(&mut self, value: u8) -> u8 {
         let new_value = value - 1;
 
         self.registers.set_flags(
-            new_value == 0, false, self.registers.f.carry, (new_value & 0xF) == 0xF
+            new_value == 0, false, (new_value & 0xF) == 0xF, self.registers.f.carry, 
         );
 
         return new_value;
@@ -485,11 +642,13 @@ impl CPU {
 
     fn dec_16(&mut self, value: u16) -> u16 {
         let new_value = value - 1;
-        self.registers.set_flags(
-            new_value == 0, false, self.registers.f.carry, (new_value & 0xFF) == 0xFF
-        );
 
         return new_value;
+    }
+
+    fn dechl(&mut self) {
+        let value = self.get_register_u16(AllRegisters::HL);
+        self.set_register_u16(AllRegisters::HL, dec_16(value));
     }
 
     fn handle_load(&mut self, to: AllRegisters, from: AllRegisters) {
@@ -511,7 +670,15 @@ impl CPU {
         self.bus.write_byte(loc, val);
     }
 
-    fn handle_interrupts(&mut self, _id: InterruptIDs) {
-        
+    fn handle_interrupts(&mut self, inter_type: InterruptIDs) {
+        use InterruptIDs::*;
+
+        match inter_type {
+            VBlank  => {}
+            LCDStat => {}
+            Timer   => {}
+            Serial  => {}
+            Joypad  => {}
+        }
     }
 }
