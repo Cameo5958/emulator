@@ -79,9 +79,11 @@ impl PPU {
         self.render_background();
         self.render_window();
         self.render_sprite();
+
+        self.draw_buffer();
     }
 
-    pub fn render_background(&mut self) {
+    fn render_background(&mut self) {
         use PPUSettings::*;
 
         let lcdc = self.get(LCDC);
@@ -187,6 +189,9 @@ impl PPU {
                 self.buffer[self.get(LY) as usize][pixel_x as usize] = color;
             }
         }
+
+        fn draw_buffer(&mut self) {}
+
     }
 
     fn get_color(&self, palette: u8, color_id: u8) -> u32 {
