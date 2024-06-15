@@ -1,5 +1,6 @@
 use crate::{ cpu::CPU, memory::MemoryBus, ppu::PPU, apu::APU, input::IPU, };
-use winit::window::WindowBuilder;
+use winit::window::{Window, WindowBuilder}; 
+use pixels::{Pixels, SurfaceTexture};
 
 struct ROM {
     bytes: [u8; 0x7FFFFF],
@@ -15,6 +16,29 @@ impl ROM {
     }
 }
 
+pub(crate) struct Screen {
+    pub dsp: Window,
+    pub pxl: Pixels,
+}
+
+impl Screen {
+    pub fn new() -> Self {
+        let event_loop = EventLoop::new();
+        let window = WindowBuilder::new()
+            .with_title("Gameboy Emulator")
+            .build(&event_loop)
+            .unwrap();
+
+        let window_size = window.inner_size();
+        let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
+        let pixels = Pixels::new(160, 144, surface_texture).unwrap();
+
+        Screen {
+            dsp: window , pxl: pixels,
+        }
+    }
+}
+
 pub(crate) struct Emulator {
     pub rom: ROM,
 
@@ -23,7 +47,7 @@ pub(crate) struct Emulator {
     pub ppu: PPU,
     pub ipu: IPU,
 
-    pub dsp: WindowBuilder,
+    pub dsp: Screen,
     pub mem: MemoryBus,
 }
 
@@ -47,7 +71,7 @@ impl Emulator {
         new_mb.ppu = PPU::new(&new_mb);
         new_mb.ipu = IPU::new(&new_mb);
 
-        new_mb.dsp = WindowBuilder::new().build(&new_mb.ipu.poll).unwrap();
+        new_mb.dsp = Screen::new();
 
         new_mb
     }

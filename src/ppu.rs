@@ -1,5 +1,6 @@
 use crate::{emulator::Emulator, memory::MemoryBus};
 use winit::window::{Window, WindowBuilder};
+use pixels::Pixels;
 
 const VRAM_BEGIN:   u16 = 0x8000;
 const VRAM_END:     u16 = 0x9FFF;
@@ -31,12 +32,12 @@ pub(crate) struct PPU {
     vram:       [u8; VRAM_SIZE],
     oam:        [u8; OAM_SIZE],
     buffer:     [[u8; 160]; 144],
-    window:     &WindowBuilder,
+    pixels:     &Pixels,
     bus:        &MemoryBus,
 }
 
 impl PPU {
-    pub fn new(em: Emulator) {
+    pub fn new(em: &Emulator) -> Self{
         PPU {
             cycle_count: 0,
             scanline:    0,
@@ -44,7 +45,7 @@ impl PPU {
             vram:       [0x00; VRAM_SIZE],
             oam:        [0x00; OAM_SIZE],
             buffer:    [[0x00; 160]; 144],
-            window:      &em.dsp,
+            pixels:      &em.dsp.pxl,
             bus:         &em.mem,
         }
     }
@@ -190,7 +191,22 @@ impl PPU {
             }
         }
 
-        fn draw_buffer(&mut self) {}
+        fn draw_buffer(&mut self) {
+            let mut frame = self.pixels.get_frame();
+
+            for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
+                let x = (i % 160) as usize;
+                let y = (i / 160) as usize;
+                let color = self.buffer[y][x];
+                
+                pixel[0] = (color >> 16) & 0xFF;
+                pixel[1] = (color >> 8)  & 0xFF;
+                pixel[2] = (color)       & 0xFF;
+                pixel[3] = 0xFF;
+            }
+
+            pixels.render().expect("Failed to render frame");
+        }
 
     }
 
