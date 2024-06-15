@@ -48,10 +48,12 @@ impl MemoryBus {
         match addr {
             // ROM_START...ROM_END => { self.sup.rom[addr as usize] }
             // VROM_START...VROM_END => { }
-            VRAM_START...VRAM_END => { self.sup.ppu.read_vram(addr - VRAM_START) }
+            VRAM_START...VRAM_END   => { self.sup.ppu.read_vram(addr - VRAM_START) }
+            OAM_START...OAM_END     => { self.sup.ppu.read_oam(addr - OAM_START) }
+
             CRAM_START...CRAM_END => { }
             UNUSED...UNUSED_D => { 0x00 }
-            OAM_START...OAM_END => {}
+
 
             _ => self.memory[addr as usize]
         }
@@ -62,6 +64,7 @@ impl MemoryBus {
         match addr {
             ROM_START...VROM_END => { } // Can't write to ROM
             VRAM_START...VRAM_END => { self.sup.ppu.write_vram(addr - VRAM_START, val) }
+            OAM_START...OAM_END   => { self.sup.ppu.write_oam(addr - OAM_START, val) }
             CRAM_START...CRAM_END => { }
             WRAM_START...WRAM_END => {
                 self.memory[addr as usize] = val;

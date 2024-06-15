@@ -11,6 +11,8 @@ pub(crate) struct CPU {
     halted:          bool,
 }
 
+const IE_REGISTER_BYTE_LOCATION: u16 = 0xFFFF;
+
 // Represents the Core Processing Unit's instructions.
 impl CPU { 
     pub fn new(em: &Emulator) -> Self {
@@ -22,22 +24,7 @@ impl CPU {
         }
     }
 
-    pub fn step(&mut self) {
-        use InterruptIDs::*;
-
-        // Check for interrupts
-        if self.bus.ime && self.bus.inf != 0 {
-            let query = self.bus.inf;
-
-            self.handle_interrupts(
-                 if query & VBlank  != 0 { VBlank  }
-            else if query & LCDStat != 0 { LCDStat }
-            else if query & Timer   != 0 { Timer   }
-            else if query & Serial  != 0 { Serial  }
-            else if query & Joypad  != 0 { Joypad  });
-
-        }
-        
+    pub fn step(&mut self) -> i32 {
         // Only execute if not halted
         if self.halted { return }
 
@@ -50,8 +37,32 @@ impl CPU {
             instruction_byte = self.bus.read_increment();
         }
         
-        let Some(instruction) = AllInstructions::decode(instruction_byte, prefixed) else {todo!("do nothing!")};
-        let tcycles = self.execute(instruction) * 4;
+        let Some(instruction) = AllInstructions::decode(instruction_byte, prefixed) else { todo!("do nothing!") };
+
+        self.execute(instruction) * 4
+    }
+
+    pub fn check_for_interrupts(&mut self) {        
+        use InterruptIDs::*;
+
+        // Check for interrupts
+        let pending = self.bus.inf & self.bus.read_byte(IE_REGISTER_BYTE_LOCATION);
+        if self.bus.ime && self.bus.inf != 0 {
+            // Disable interrupts to prevent double interrupts
+            self.bus.ime = false;
+
+            // Call handle_interrupts();
+            let target: InterruptIDs = None;
+            let query = self.bus.inf;
+
+            if      query & VBlank  != 0 { target = VBlank  }
+            else if query & LCDStat != 0 { target = LCDStat }
+            else if query & Timer   != 0 { target = Timer   }
+            else if query & Serial  != 0 { target = Serial  }
+            else if query & Joypad  != 0 { target = Joypad  }
+
+            self.handle_interrupts(target);
+        }
     }
 
     fn execute(&mut self, instruction: AllInstructions) -> u8{ 
@@ -558,7 +569,7 @@ impl CPU {
             new_value == 0, false, (self.registers.a & 0xF) + (value & 0xF) > 0xF, did_overflow, 
         );
 
-        return new_value;
+        new_value
     }
 
     fn add_16(&mut self, value: u16, carry: bool) -> u16 {
@@ -570,7 +581,7 @@ impl CPU {
 
         );
 
-        return new_value;
+        new_value
     }
 
     fn sub(&mut self, value: u8, carry: bool) -> u8 {
@@ -582,28 +593,28 @@ impl CPU {
 
         );
 
-        return new_value;
+        new_value
     }
 
     fn _and(&mut self, value: u8) -> u8 {
         let new_value = self.registers.a & value;
 
         self.registers.set_flags(new_value == 0, false, true, false);
-        return new_value;
+        new_value
     }
 
     fn _or(&mut self, value: u8) -> u8 {
         let new_value = self.registers.a | value;
 
         self.registers.set_flags(new_value == 0, false, false, false);
-        return new_value;
+        new_value
     }
 
     fn _xor(&mut self, value: u8) -> u8 {
         let new_value = self.registers.a ^ value;
 
         self.registers.set_flags(new_value == 0, false, false, false);
-        return new_value;
+        new_value
     }
 
     fn inc(&mut self, value: u8) -> u8 {
@@ -613,13 +624,13 @@ impl CPU {
             new_value == 0, false, (new_value & 0xF) == 0, self.registers.f.carry, 
         );
 
-        return new_value;
+        new_value
     }
 
     fn inc_16(&mut self, value: u16) -> u16 {
         let new_value = value + 1;
 
-        return new_value;
+        new_value
     }
 
     fn inchl(&mut self) {
@@ -639,13 +650,13 @@ impl CPU {
             new_value == 0, false, (new_value & 0xF) == 0xF, self.registers.f.carry, 
         );
 
-        return new_value;
+        new_value
     }
 
     fn dec_16(&mut self, value: u16) -> u16 {
         let new_value = value - 1;
 
-        return new_value;
+        new_value
     }
 
     fn dechl(&mut self) {
@@ -675,12 +686,16 @@ impl CPU {
     fn handle_interrupts(&mut self, inter_type: InterruptIDs) {
         use InterruptIDs::*;
 
-        match inter_type {
-            VBlank  => {}
-            LCDStat => {}
-            Timer   => {}
-            Serial  => {}
-            Joypad  => {}
-        }
+        let loc = match inter_type {
+            VBlank  => { 0x40 }
+            LCDStat => { 0x48 }
+            Timer   => { 0x50 }
+            Serial  => { 0x58 }
+            Joypad  => { 0x60 }
+        } as u16;
+
+        self.bus.push(self.bus.pc);
+        self.pc = loc;
+        self.bus.inf &= !inter_type;
     }
 }
