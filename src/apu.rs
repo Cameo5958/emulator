@@ -24,6 +24,11 @@ struct SquareWaveChannel {
     frequency: f32,
 }
 
+enum SquareSettingOffsets {
+    SweepReg = 0x0, SoundLen = 0x1, Volume   = 0x2,
+    FreqLow  = 0x3, FreqHigh = 0x4,
+}
+
 impl SquareWaveChannel {
     pub fn new(has_sweep: bool, offset: u16, memory_bus: &MemoryBus) -> Self {
         SquareWaveChannel { enabled: true, offset: offset, time: 0, has_sweep: has_sweep, 
@@ -32,25 +37,21 @@ impl SquareWaveChannel {
     }
 
     fn get_sample(&mut self) -> f32 {
+        use SquareSettingOffsets::*;
         if !self.enabled {
             return 0.0;
         }
 
-        let nr11 = self.memory_bus.read_byte(self.offset + SOUND_LENGTH_OFFSET);
-        let nr12 = self.memory_bus.read_byte(self.offset + VOLUME_OFFSET);
-        let nr13 = self.memory_bus.read_byte(self.offset + FREQ_LOW_OFFSET);
-        let nr14 = self.memory_bus.read_byte(self.offset + FREQ_HIGH_OFFSET);
-
-        let raw_frequency = 2048.0 - ((nr14 as u16 & 0b111) << 8 | nr13 as u16) as f32;
+        let raw_frequency = 2048.0 - ((self.get(FreqHigh) as u16 & 0b111) << 8 | self.get(FreqLow) as u16) as f32;
         self.frequency = 131072.0 / raw_frequency;
 
         if self.has_sweep {
             self.update_sweep();
         }
 
-        let volume = (nr12 >> 4) as f32 / 15.0;
+        let volume = (self.get(Volume) >> 4) as f32 / 15.0;
 
-        let duty = match (nr11 >> 6) & 0b11 {
+        let duty = match (self.get(SoundLen) >> 6) & 0b11 {
             0 => 0.125, 1 => 0.25, 2 => 0.5,
             3 => 0.75, _ => 0.5,
         };
@@ -66,7 +67,7 @@ impl SquareWaveChannel {
 
     fn update_sweep(&mut self) {
         if let Some(ref mut sweep) = self.sweep_unit {
-            let nr10 = self.memory_bus.read_byte(self.offset);
+            let nr10 = self.get(SquareSettingOffsets::SweepReg);
             let sweep_period = (nr10 >> 4) & 0b111;
             sweep.direction = (nr10 & 0b1000) != 0;
             sweep.shift = nr10 & 0b111;
@@ -90,6 +91,8 @@ impl SquareWaveChannel {
             }
         }
     }
+
+    fn get(&self, pos: u8) -> u8 { self.memory_bus.read_byte(self.offset + pos) }
 }
 
 struct WaveformChannel {
@@ -115,6 +118,14 @@ impl<'a> WaveformChannel<'a> {
             time: 0.0,
             memory_bus,
         }
+    }
+
+    pub fn read_wvram(&self, addr:u16) -> u8 {
+        self.wave_ram[addr]
+    }
+
+    pub fn write_wvram(&self, addr:u16, val:u8) {
+        self.wave_ram[addr] = val;
     }
 
     pub fn get_sample(&mut self) -> f32 {
@@ -171,5 +182,13 @@ impl APU {
             let sample = (elf.CH1.get_sample() + self.ch2.get_sample() + self.ch3.get_sample() + self.ch4.get_sample) / 4;
             if sender.send(sample).is_err() { break; }
         }
+    }
+
+    pub fn write_wvram(&mut self, addr: u16, val: u8) {
+        self.ch3.write_wvram(addr, val)
+    }
+
+    pub fn read_wvram(&self, addr: u16) -> u8 {
+        self.ch3.read_wvram(addr)
     }
 }

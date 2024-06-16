@@ -25,6 +25,9 @@ const HRAM_END: u16 = 0xFFFE;
 const TIMER_START:  u16 = 0xFF04; 
 const TIMER_END:    u16 = 0xFF07;
 
+const WVRAM_START:  u16 = 0xFF30;
+const WVRAM_END:    u16 = 0xFF3F;
+
 pub(crate) struct MemoryBus {
     pub memory:    [u8; 0xFFFF],
     pub pc:        u16,
@@ -50,6 +53,7 @@ impl MemoryBus {
             // VROM_START...VROM_END => { }
             VRAM_START...VRAM_END   => { self.sup.ppu.read_vram(addr - VRAM_START) }
             OAM_START...OAM_END     => { self.sup.ppu.read_oam(addr - OAM_START) }
+            WVRAM_START...WVRAM_END => { self.sup.apu.read_wvram(addr - WVRAM_START) }
 
             CRAM_START...CRAM_END => { }
             UNUSED...UNUSED_D => { 0x00 }
@@ -68,14 +72,14 @@ impl MemoryBus {
             CRAM_START...CRAM_END => { }
             WRAM_START...WRAM_END => {
                 self.memory[addr as usize] = val;
-                // Write to ECHO RAM as well
+                // Write to ECHO ram as well
                 let eloc = addr - WRAM_START + ERAM_START;
-                if eloc <= WRAM_END {
+                if eloc <= ERAM_END {
                     self.write_byte(eloc, val);
                 }
             }
             UNUSED...UNUSED_D => { } // Can't write to unmapped location
-            OAM_START...OAM_END => {}
+            WVRAM_START...WVRAM_END => { self.sup.apu.write_wvram(addr - WVRAM_START, val)}
             _ => self.memory[addr as usize]
         }        
     }

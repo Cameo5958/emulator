@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use crate::{ cpu::CPU, memory::MemoryBus, ppu::PPU, apu::APU, input::IPU, };
 use winit::window::{Window, WindowBuilder}; 
 use pixels::{Pixels, SurfaceTexture};
@@ -7,7 +9,7 @@ struct ROM {
 }
 
 impl ROM {
-    pub fn load(path: String) -> Self {
+    pub fn load(path: &str) -> Self {
         let mut buffer  = Vec::new();
         let mut file    = File::open(path).expect("Invalid ROM path");
         file.read_to_end(&mut buffer).expect("Unable to read ROM");
@@ -18,6 +20,7 @@ impl ROM {
 
 pub(crate) struct Screen {
     pub dsp: Window,
+    pub evt: EventLoop,
     pub pxl: Pixels,
 }
 
@@ -34,7 +37,7 @@ impl Screen {
         let pixels = Pixels::new(160, 144, surface_texture).unwrap();
 
         Screen {
-            dsp: window , pxl: pixels,
+            dsp: window, evt: event_loop, pxl: pixels,
         }
     }
 }
@@ -52,9 +55,9 @@ pub(crate) struct Emulator {
 }
 
 impl Emulator {
-    pub fn new(_rom: ROM) -> Self{
+    pub fn new(query: &str) -> Self{
         let new_mb = Emulator {
-            rom: _rom,
+            rom: ROM::load(query),
 
             cpu: None,
             apu: None,
@@ -83,10 +86,6 @@ impl Emulator {
         self.ppu.update(&cycles);
         self.apu.update(cycles);
         self.cpu.check_for_interrupts();
-
-        self.ipu.process();
-
-        self.process_events();
     }
 
     fn process_events(&self) {
@@ -94,16 +93,18 @@ impl Emulator {
     }
 
     pub fn run(&mut self) {
+        self.dsp.event_loop.run_return(|events, _, control_flow| {
+            *control_flow = ControlFlow::Poll;
+
+            // Take a step
+            self.step();
+            
+            // Get events
+            ipu.poll(&events);
+
+            // Process events
+            self.process_events();
+        });
         loop { self.step() }
     }
-}
-
-pub fn run() {
-    // let mut cpu     = CPU::new();
-    // let mut memory  = MemoryBus::new();
-    // let mut ppu     = PPU::new();
-    // let mut apu     = APU::new();
-    // let mut input   = Input::new();
-
-    loop {}
 }
