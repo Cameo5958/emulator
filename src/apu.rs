@@ -1,9 +1,17 @@
-use std::sync::mpsc::{self, Reciever, Sender};
-use std::f32::consts::PI;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use capl::{SampleFormat, SampleRate, StreamConfig};
-use crate::emulator::Emulator;
+use std::rc::Rc;
+use std::cell::RefCell;
 
+use std::sync::mpsc::{//self, Receiver, 
+    Sender};
+use cpal::{
+    // traits::{DeviceTrait, HostTrait, StreamTrait},
+//    {StreamConfig}
+};
+use crate::{
+    memory::MemoryBus,
+};
+
+const SAMPLE_SIZE: f32 = 0.0;
 const SAMPLE_RATE: f32 = 44100.0;
 
 const SOUND_LENGTH_OFFSET:   u8 = 0x1;
@@ -20,7 +28,7 @@ struct SquareWaveChannel {
     time: f32,
     has_sweep: bool,
     sweep_options: Option<SweepUnit>,
-    memory_bus: &MemoryBus,
+    memory_bus: Rc<RefCell<MemoryBus>>,
     frequency: f32,
 }
 
@@ -30,10 +38,10 @@ enum SquareSettingOffsets {
 }
 
 impl SquareWaveChannel {
-    pub fn new(has_sweep: bool, offset: u16, memory_bus: &MemoryBus) -> Self {
-        SquareWaveChannel { enabled: true, offset: offset, time: 0, has_sweep: has_sweep, 
-                            sweep_options: Some(SweepUnit {time: 0, direction: false, shift: 0}),
-                            memory_bus: memory_bus, frequency: 0 }
+    pub fn new(has_sweep: bool, offset: u16, memory_bus: Rc<RefCell<MemoryBus>>) -> Self {
+        SquareWaveChannel { enabled: true, offset: offset, time: 0.0, has_sweep: has_sweep, 
+                            sweep_options: Some(SweepUnit {time: 0,   direction: false, shift: 0}),
+                            memory_bus: memory_bus, frequency: 0.0 }
     }
 
     fn get_sample(&mut self) -> f32 {
@@ -66,7 +74,7 @@ impl SquareWaveChannel {
     }
 
     fn update_sweep(&mut self) {
-        if let Some(ref mut sweep) = self.sweep_unit {
+        if let Some(ref mut sweep) = self.sweep_options {
             let nr10 = self.get(SquareSettingOffsets::SweepReg);
             let sweep_period = (nr10 >> 4) & 0b111;
             sweep.direction = (nr10 & 0b1000) != 0;
@@ -92,7 +100,7 @@ impl SquareWaveChannel {
         }
     }
 
-    fn get(&self, pos: u8) -> u8 { self.memory_bus.read_byte(self.offset + pos) }
+    fn get(&mut self, _type: SquareSettingOffsets) -> u8 { self.memory_bus.borrow().read_byte(self.offset + (_type as u16)) }
 }
 
 struct WaveformChannel {
@@ -103,11 +111,11 @@ struct WaveformChannel {
     wave_ram: [u8; 16],
     wave_position: usize,
     time: f32,
-    memory_bus: &MemoryBus,
+    memory_bus: Rc<RefCell<MemoryBus>>,
 }
 
-impl<'a> WaveformChannel<'a> {
-    pub fn new(memory_bus: &'a MemoryBus) -> Self {
+impl WaveformChannel {
+    pub fn new(mem: Rc<RefCell<MemoryBus>>) -> Self {
         WaveformChannel {
             enabled: false,
             dac_enabled: false,
@@ -116,17 +124,13 @@ impl<'a> WaveformChannel<'a> {
             wave_ram: [0; 16],
             wave_position: 0,
             time: 0.0,
-            memory_bus,
+            memory_bus: mem,
         }
     }
 
-    pub fn read_wvram(&self, addr:u16) -> u8 {
-        self.wave_ram[addr]
-    }
+    pub fn read_wvram(&self, addr:u16) -> u8 { self.wave_ram[addr as usize] }
 
-    pub fn write_wvram(&self, addr:u16, val:u8) {
-        self.wave_ram[addr] = val;
-    }
+    pub fn write_wvram(&mut self, addr:u16, val:u8) { self.wave_ram[addr as usize] = val; }
 
     pub fn get_sample(&mut self) -> f32 {
         if !self.enabled || !self.dac_enabled {
@@ -134,12 +138,12 @@ impl<'a> WaveformChannel<'a> {
         }
 
         // Read the necessary registers
-        let nr32 = self.memory_bus.read_byte(NR32);
+        let nr32 = self.get(0xFF1C);
         self.volume = ((nr32 >> 5) & 0b11) as f32 / 3.0; // Volume is 0, 1/4, 1/2, or 3/4
 
         // Calculate frequency based on NR33 and NR34
-        let nr34 = self.memory_bus.read_byte(NR34);
-        let raw_frequency = 2048 - (((nr34 & 0b111) as u16) << 8 | self.memory_bus.read_byte(NR33) as u16);
+        let nr34 = self.get(0xFF1E);
+        let raw_frequency = 2048 - (((nr34 & 0b111) as u16) << 8 | self.get(0xFF1E) as u16);
         self.frequency = 4194304.0 / (32.0 * raw_frequency as f32);
 
         // Calculate current waveform sample based on time
@@ -158,28 +162,40 @@ impl<'a> WaveformChannel<'a> {
             -normalized_sample
         }
     }
+
+    fn get(&self, loc: u16) -> u8 { self.memory_bus.borrow().read_byte(loc) }
 }
 
-pub(crate) struct APU {
-    ch1: SquareWaveChannel,
-    ch2: SquareWaveChannel,
-    ch3: WaveformChannel,
-    ch4: NoiseChannel,
+struct NoiseChannel<'a> {
+    mem: &'a MemoryBus,
 }
 
-impl APU {
-    pub fn new(em: &Emulator) -> Self {
+impl<'a> NoiseChannel<'a> {
+    fn new<'a>(mem: &'a MemoryBus) {
+        NoiseChannel { mem: mem }
+    }
+}
+
+pub(crate) struct APU<'a> {
+    ch1: SquareWaveChannel<'a>,
+    ch2: SquareWaveChannel<'a>,
+    ch3: WaveformChannel<'a>,
+    ch4: NoiseChannel<'a>,
+}
+
+impl<'a> APU<'a> {
+    pub fn new(mem: Rc<RefCell<MemoryBus>>) -> Self {
         APU {
-            ch1: SquareWaveChannel::new( true, 0xFF10, &em.mem),
-            ch2: SquareWaveChannel::new(false, 0xFF15, &em.mem),
-            ch3: WaveformChannel::new(&em.mem),
-            ch4: NoiseChannel::new(&em.mem),
+            ch1: SquareWaveChannel::new( true, 0xFF10, mem),
+            ch2: SquareWaveChannel::new(false, 0xFF15, mem),
+            ch3: WaveformChannel::new(mem),
+            ch4: NoiseChannel::new(mem),
         }
     }
     
     pub fn generate_audio(&mut self, sender: Sender<f32>) {
         for _ in 0..(SAMPLE_SIZE as usize) {
-            let sample = (elf.CH1.get_sample() + self.ch2.get_sample() + self.ch3.get_sample() + self.ch4.get_sample) / 4;
+            let sample = (self.ch1.get_sample() + self.ch2.get_sample() + self.ch3.get_sample() + self.ch4.get_sample()) / 4.0;
             if sender.send(sample).is_err() { break; }
         }
     }

@@ -1,90 +1,106 @@
-use std::ops::ControlFlow;
+use std::rc::Rc;
+use std::cell::RefCell;
 
-use crate::{ cpu::CPU, memory::MemoryBus, ppu::PPU, apu::APU, input::IPU, };
-use winit::window::{Window, WindowBuilder}; 
-use pixels::{Pixels, SurfaceTexture};
+use std::{fs::File, io::Read};
 
-struct ROM {
-    bytes: [u8; 0x7FFFFF],
+use crate::{ cpu::CPU, memory::MemoryBus, ppu::PPU, input::IPU, timer::Timer}; //, apu::APU };
+use winit::{
+    window::{Window, WindowBuilder},
+    event_loop::{EventLoop, ControlFlow},
+    platform::run_return::EventLoopExtRunReturn,
+    dpi::LogicalSize,
+}; 
+use pixels::{Pixels, SurfaceTexture, wgpu::Backends};
+
+pub(crate) struct ROM {
+    bytes: Vec<u8>,
+    bank: u8,
 }
 
 impl ROM {
-    pub fn load(path: &str) -> Self {
+    pub fn new(path: &str) -> Self {
         let mut buffer  = Vec::new();
         let mut file    = File::open(path).expect("Invalid ROM path");
-        file.read_to_end(&mut buffer).expect("Unable to read ROM");
+        file.read(&mut buffer).expect("Unable to read ROM");
 
-        ROM { bytes: buffer }
+        ROM { bytes: buffer, bank: 1, }
+    }
+
+    pub fn read_byte(&self, addr: u16) -> u8 {
+        match addr {
+            0x0000..=0x3FFF => { self.bytes[addr as usize] },
+            0x4000..=0x7FFF => { 
+                let addr = self.bank as u32 * 0x4000 + (addr - 0x4000) as u32;
+                self.bytes[addr as usize]
+            }
+            _ => 0xFF,
+        }
+    }
+
+    pub fn switch_bank(&mut self, bank: u8) {
+        self.bank = bank;
     }
 }
 
 pub(crate) struct Screen {
     pub dsp: Window,
-    pub evt: EventLoop,
-    pub pxl: Pixels,
+    // pub evt: EventLoop<()>,
+    pub pxl: Rc<RefCell<Pixels>>,
 }
 
 impl Screen {
-    pub fn new() -> Self {
-        let event_loop = EventLoop::new();
+    pub fn new(_loop: &EventLoop<()>) -> Self {
         let window = WindowBuilder::new()
             .with_title("Gameboy Emulator")
-            .build(&event_loop)
+            .with_inner_size(LogicalSize::new(160, 144))
+            .build(_loop)
             .unwrap();
 
         let window_size = window.inner_size();
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
-        let pixels = Pixels::new(160, 144, surface_texture).unwrap();
+        let pixels = Pixels::new_with_backends(160, 144, surface_texture, pixels::wgpu::Backends::all());
 
         Screen {
-            dsp: window, evt: event_loop, pxl: pixels,
+            dsp: window, pxl: Rc::new(RefCell::new(pixels.unwrap())),
         }
     }
 }
 
 pub(crate) struct Emulator {
-    pub rom: ROM,
-
     pub cpu: CPU,
-    pub apu: APU, 
+    // // pub apu: APU, 
     pub ppu: PPU,
     pub ipu: IPU,
+    pub tmr: Timer,
 
-    pub dsp: Screen,
-    pub mem: MemoryBus,
+    // pub dsp: Screen,
 }
 
 impl Emulator {
-    pub fn new(query: &str) -> Self{
-        let new_mb = Emulator {
-            rom: ROM::load(query),
+    pub fn new(_loop: &EventLoop<()>) -> Self {
+        println!("In emulator::new()");
+        let rom = ROM::new("roms\\game.gb");
+        let mem = Rc::new(RefCell::new(MemoryBus::new(rom)));
+        
+        let dsp = Screen::new(_loop);
 
-            cpu: None,
-            apu: None,
-            ppu: None,
-            ipu: None,
-
-            dsp: None,
-            mem: None,
-        };
-
-        new_mb.mem = MemoryBus::new(&new_mb);
-        new_mb.cpu = CPU::new(&new_mb);
-        new_mb.apu = APU::new(&new_mb);
-        new_mb.ppu = PPU::new(&new_mb);
-        new_mb.ipu = IPU::new(&new_mb);
-
-        new_mb.dsp = Screen::new();
-
-        new_mb
+        Emulator {
+            cpu: CPU::new(Rc::clone(&mem)),
+            // // apu: apu,
+            ppu: PPU::new(Rc::clone(&mem), Rc::clone(&dsp.pxl)),
+            ipu: IPU::new(Rc::clone(&mem)),
+            tmr: Timer::new(Rc::clone(&mem)),
+            
+            // dsp: dsp,
+        }
     }
 
     fn step(&mut self) {
         let cycles = self.cpu.step();
 
-        self.timer.update(cycles);
-        self.ppu.update(&cycles);
-        self.apu.update(cycles);
+        self.tmr.step(cycles);
+        // self.ppu.update(cycles);
+        // self.apu.update(cycles);
         self.cpu.check_for_interrupts();
     }
 
@@ -92,19 +108,18 @@ impl Emulator {
 
     }
 
-    pub fn run(&mut self) {
-        self.dsp.event_loop.run_return(|events, _, control_flow| {
+    pub fn run(&mut self, _loop: &mut EventLoop<()>) { //&mut self) {
+        _loop.run_return(|events, _, control_flow| {
             *control_flow = ControlFlow::Poll;
 
             // Take a step
             self.step();
             
             // Get events
-            ipu.poll(&events);
+            self.ipu.poll(&events);
 
             // Process events
             self.process_events();
         });
-        loop { self.step() }
     }
 }
